@@ -146,7 +146,38 @@ if submitted:
 
 # Dashboard
 st.header("Performance Dashboard")
-
+# Add sample records once
+if st.session_state.students.empty:
+    sample_students = [
+        {
+            "Roll": "101",
+            "Name": "Aman",
+            "Attendance %": 45,
+            "Internal Marks": 30,
+            "Previous Semester %": 55,
+            "Risk Level": "High Risk",
+            "Reason": "Attendance and internal marks are both very low."
+        },
+        {
+            "Roll": "102",
+            "Name": "Simran",
+            "Attendance %": 68,
+            "Internal Marks": 55,
+            "Previous Semester %": 65,
+            "Risk Level": "Medium Risk",
+            "Reason": "Attendance needs improvement."
+        },
+        {
+            "Roll": "103",
+            "Name": "Rohan",
+            "Attendance %": 85,
+            "Internal Marks": 75,
+            "Previous Semester %": 80,
+            "Risk Level": "Low Risk",
+            "Reason": "Attendance and internal marks are satisfactory."
+        }
+    ]
+    st.session_state.students = pd.DataFrame(sample_students)
 df = st.session_state.students
 
 if not df.empty:
