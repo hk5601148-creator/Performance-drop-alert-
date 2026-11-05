@@ -59,27 +59,6 @@ def predict_risk(row):
         risk = "Low"
         reason = "Good academic performance"
 
-    return pd.Series([
-            "High",
-            "Attendance below 60% and marks below 40."
-        ])
-
-    elif attendance < 75 or marks < 50:
-        reasons = []
-
-        if attendance < 75:
-            reasons.append("Attendance below 75%")
-
-        if marks < 50:
-            reasons.append("Internal marks below 50")
-
-        return pd.Series([
-            "Medium",
-            " and ".join(reasons) + "."
-        ])
-    
-
-
 df[["Risk Level", "Risk Reason"]] = df.apply(
     predict_risk,
     axis=1
