@@ -2,192 +2,209 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import gspread
+from google import genai
+import json
 import smtplib
 from email.message import EmailMessage
 
-st.set_page_config(
-    page_title="Performance Drop Alert",
-    page_icon="🎓",
-    layout="wide"
-)
+st.set_page_config(page_title="Performance Drop Alert", page_icon="🎓", layout="wide")
 
-st.title("🎓 Student Performance Drop Alert")
-st.write("A simple system to identify students who may need academic support.")
+st.title("🎓 Performance Drop Alert")
+st.write("Student performance monitoring and early risk identification")
 
-COLUMNS = [
-    "Roll Number",
-    "Student Name",
-    "Attendance",
-    "Internal Marks",
-    "Previous semester",
-    "Risk Level",
-    "Reason"
-]
+# Connect Google Sheets
+@st.cache_resource
+def connect_sheet():
+    credentials = dict(st.secrets["gcp_service_account"])
+    gc = gspread.service_account_from_dict(credentials)
+    return gc.open_by_url(st.secrets["google_sheet"]["url"]).sheet1
 
-# Risk prediction
-def predict_risk(attendance, marks, previous):
-    if (attendance < 60 and marks < 40) or previous < 40:
-        return "High", "Very low attendance, marks, or previous semester percentage"
+# Gemini risk prediction
+def predict_risk(attendance, marks):
+    prompt = f"""
+You are a student performance risk analyser.
 
-    elif attendance < 75 or marks < 50 or previous < 50:
-        return "Medium", "Needs improvement in academic performance"
+Attendance: {attendance}%
+Internal Marks: {marks}
 
-    else:
-        return "Low", "Good academic performance"
+Follow these exact rules:
+1. If attendance <60% AND internal marks <40: High Risk.
+2. If attendance <75% OR internal marks <50: Medium Risk.
+3. Otherwise: Low Risk.
 
+Give a short reason.
 
-# Sample student records
-sample_data = [
-    ["101", "Aman", 90, 85, 82, "Low", "Good academic performance"],
-    ["102", "Simran", 70, 65, 72, "Medium", "Needs improvement in academic performance"],
-    ["103", "Rahul", 55, 35, 60, "High", "Very low attendance, marks, or previous semester percentage"],
-    ["104", "Priya", 80, 75, 85, "Low", "Good academic performance"],
-    ["105", "Karan", 68, 45, 48, "Medium", "Needs improvement in academic performance"],
-    ["106", "Neha", 85, 88, 35, "High", "Very low attendance, marks, or previous semester percentage"]
-]
-
-if "students" not in st.session_state:
-    st.session_state.students = pd.DataFrame(
-        sample_data, columns=COLUMNS
+Return only JSON in this format:
+{{"risk_level": "High", "reason": "Your reason"}}
+"""
+    client = genai.Client(api_key=st.secrets["gemini"]["api_key"])
+    response = client.models.generate_content(
+        model="gemini-3.8-flash",
+        contents=prompt,
+        config={"response_mime_type": "application/json"}
     )
+    result = json.loads(response.text)
 
+    if result["risk_level"] not in ["High", "Medium", "Low"]:
+        raise ValueError("Gemini returned an invalid risk level.")
+
+    return result["risk_level"], result["reason"]
 
 # Email alert
-def send_alert(name, roll, reason):
-    try:
-        settings = st.secrets["email"]
+def send_email(name, reason):
+    settings = st.secrets["email"]
+    msg = EmailMessage()
+    msg["Subject"] = "Student Performance Risk Alert"
+    msg["From"] = settings["sender"]
+    msg["To"] = settings["recipient"]
+    msg.set_content(
+        f"Dear {name},\n\n"
+        f"You are at risk due to: {reason}\n\n"
+        "Please meet your mentor and prepare an improvement plan.\n\n"
+        "Regards,\nStudent Performance Alert System"
+    )
 
-        message = EmailMessage()
-        message["Subject"] = "High Risk Student Alert"
-        message["From"] = settings["sender"]
-        message["To"] = settings["recipient"]
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(settings["sender"], settings["password"])
+        server.send_message(msg)
 
-        message.set_content(
-            f"High Risk Student Alert\n\n"
-            f"Student Name: {name}\n"
-            f"Roll Number: {roll}\n"
-            f"Reason: {reason}\n\n"
-            "Please provide academic support to this student."
-        )
+# Load sheet
+try:
+    sheet = connect_sheet()
+    records = sheet.get_all_records()
+    df = pd.DataFrame(records)
+except Exception as e:
+    st.error("Could not connect to Google Sheets. Check your Secrets and sheet access.")
+    st.stop()
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(settings["sender"], settings["password"])
-            server.send_message(message)
+required = [
+    "Roll", "Name", "Attendance %",
+    "Internal Marks", "Previous Semester %"
+]
 
-        return True
+if not all(column in df.columns for column in required):
+    st.error("Your Google Sheet must contain: " + ", ".join(required))
+    st.stop()
 
-    except Exception:
-        st.error("Email could not be sent. Please check your email settings.")
-        return False
-
+# Add missing output columns
+for column in ["Risk Level", "Reason"]:
+    if column not in df.columns:
+        sheet.update_cell(1, len(df.columns) + 1, column)
+        df[column] = ""
 
 # Add student
-st.header("➕ Add New Student")
+st.header("Add Student")
 
 with st.form("student_form"):
     roll = st.text_input("Roll Number")
     name = st.text_input("Student Name")
-    attendance = st.number_input("Attendance (%)", 0.0, 100.0, 80.0)
+    attendance = st.number_input("Attendance %", 0.0, 100.0, 80.0)
     marks = st.number_input("Internal Marks", 0.0, 100.0, 60.0)
-    previous = st.number_input("Previous semester (%)", 0.0, 100.0, 60.0)
+    previous = st.number_input("Previous Semester %", 0.0, 100.0, 60.0)
 
-    submitted = st.form_submit_button("Add Student")
+    add = st.form_submit_button("Add Student")
 
-    if submitted:
-        existing_rolls = st.session_state.students["Roll Number"].astype(str)
+if add:
+    if not roll.strip() or not name.strip():
+        st.warning("Enter roll number and student name.")
+    elif any(str(r.get("Roll")) == roll.strip() for r in records):
+        st.warning("This roll number already exists.")
+    else:
+        try:
+            risk, reason = predict_risk(attendance, marks)
 
-        if not roll.strip() or not name.strip():
-            st.warning("Please enter the roll number and student name.")
-
-        elif roll.strip() in existing_rolls.values:
-            st.warning("This roll number already exists.")
-
-        else:
-            risk, reason = predict_risk(
-                attendance, marks, previous
-            )
-
-            new_row = pd.DataFrame([{
-                "Roll Number": roll.strip(),
-                "Student Name": name.strip(),
-                "Attendance": attendance,
-                "Internal Marks": marks,
-                "Previous semester": previous,
-                "Risk Level": risk,
-                "Reason": reason
-            }])
-
-            st.session_state.students = pd.concat(
-                [st.session_state.students, new_row],
-                ignore_index=True
-            )
+            sheet.append_row([
+                roll.strip(), name.strip(), attendance,
+                marks, previous, risk, reason
+            ])
 
             if risk == "High":
-                if "email" in st.secrets:
-                    if send_alert(name, roll, reason):
-                        st.success("Student added and email alert sent!")
-                else:
-                    st.warning("Student added, but email settings are missing.")
+                try:
+                    send_email(name, reason)
+                    st.success("Student added and high-risk email sent.")
+                except Exception:
+                    st.warning("Student added, but email could not be sent.")
+
             else:
-                st.success(f"Student added successfully. Risk: {risk}")
+                st.success(f"Student added. Risk Level: {risk}")
 
             st.rerun()
 
+        except Exception as e:
+            st.error(f"Could not analyse student: {e}")
+
+# Analyse existing students
+st.header("Gemini Risk Analysis")
+
+if st.button("Analyse all students with Gemini"):
+    try:
+        current_records = sheet.get_all_records()
+
+        for row_number, row in enumerate(current_records, start=2):
+            risk, reason = predict_risk(
+                float(row["Attendance %"]),
+                float(row["Internal Marks"])
+            )
+            sheet.update(
+                range_name=f"F{row_number}:G{row_number}",
+                values=[[risk, reason]]
+            )
+
+        st.success("Risk Level and Reason updated in Google Sheets.")
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"Analysis failed: {e}")
 
 # Dashboard
-st.header("📊 Dashboard")
+st.header("Performance Dashboard")
 
-df = st.session_state.students.copy()
+try:
+    df = pd.DataFrame(sheet.get_all_records())
 
-total = len(df)
-high = int((df["Risk Level"] == "High").sum())
-medium = int((df["Risk Level"] == "Medium").sum())
-low = int((df["Risk Level"] == "Low").sum())
+    if not df.empty:
+        for column in ["Risk Level", "Reason"]:
+            if column not in df.columns:
+                df[column] = ""
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total Students", total)
-c2.metric("High Risk", high)
-c3.metric("Medium Risk", medium)
-c4.metric("Low Risk", low)
+        high = int((df["Risk Level"] == "High").sum())
+        medium = int((df["Risk Level"] == "Medium").sum())
+        low = int((df["Risk Level"] == "Low").sum())
 
-# Pie chart
-st.subheader("Risk Distribution")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Students", len(df))
+        c2.metric("High Risk", high)
+        c3.metric("Medium Risk", medium)
+        c4.metric("Low Risk", low)
 
-chart_data = pd.DataFrame({
-    "Risk Level": ["High", "Medium", "Low"],
-    "Students": [high, medium, low]
-})
+        chart = pd.DataFrame({
+            "Risk Level": ["High", "Medium", "Low"],
+            "Students": [high, medium, low]
+        })
 
-fig = px.pie(
-    chart_data,
-    names="Risk Level",
-    values="Students",
-    title="Student Risk Levels"
-)
+        st.subheader("Risk Distribution")
+        fig = px.pie(chart, names="Risk Level", values="Students")
+        st.plotly_chart(fig, use_container_width=True)
 
-st.plotly_chart(fig, use_container_width=True)
+        st.subheader("Student List")
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
-# Student table
-st.subheader("📋 Student Records")
-st.dataframe(df, use_container_width=True, hide_index=True)
+        st.subheader("High Risk Students")
+        st.dataframe(
+            df[df["Risk Level"] == "High"],
+            use_container_width=True,
+            hide_index=True
+        )
 
-# High-risk list
-st.subheader("⚠️ High Risk Students")
+        st.download_button(
+            "Download Student Report",
+            df.to_csv(index=False).encode("utf-8"),
+            "student_report.csv",
+            "text/csv"
+        )
+    else:
+        st.info("Your Google Sheet has no student records yet.")
 
-high_students = df[df["Risk Level"] == "High"]
-
-if not high_students.empty:
-    st.dataframe(high_students, use_container_width=True, hide_index=True)
-else:
-    st.success("No high-risk students.")
-
-# Download report
-st.subheader("Download Report")
-
-st.download_button(
-    label="Download Student Report",
-    data=df.to_csv(index=False).encode("utf-8"),
-    file_name="student_performance_report.csv",
-    mime="text/csv"
-    )
-    
+except Exception as e:
+    st.error(f"Dashboard could not load: {e}")
