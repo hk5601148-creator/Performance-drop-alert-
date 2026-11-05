@@ -1,183 +1,109 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import smtplib
-from email.message import EmailMessage
+import os
 
 st.set_page_config(
     page_title="Performance Drop Alert",
-    page_icon="🎓",
+    page_icon="📊",
     layout="wide"
 )
 
-st.title("🎓 Student Performance Drop Alert")
-st.write("Monitor student performance and identify students who need support.")
+st.title("📊 Student Performance Drop Alert System")
+st.write("Monitor student attendance and marks to identify students who need support.")
 
-# Risk prediction
-def predict_risk(attendance, marks):
-    if attendance < 60 and marks < 40:
-        return "High", "Attendance below 60% and internal marks below 40%"
+# Load student data
+if os.path.exists("students.csv"):
+    df = pd.read_csv("students.csv")
+else:
+    df = pd.DataFrame({
+        "Student Name": ["Aman", "Simran", "Rahul", "Priya", "Karan"],
+        "Attendance": [55, 85, 70, 92, 45],
+        "Internal Marks": [30, 75, 45, 88, 25]
+    })
 
-    elif attendance < 75 or marks < 50:
-        reasons = []
-        if attendance < 75:
-            reasons.append("Attendance below 75%")
-        if marks < 50:
-            reasons.append("Internal marks below 50%")
-        return "Medium", " and ".join(reasons)
-
+# Calculate risk
+def calculate_risk(row):
+    if row["Attendance"] < 60 and row["Internal Marks"] < 40:
+        return "High"
+    elif row["Attendance"] < 75 or row["Internal Marks"] < 50:
+        return "Medium"
     else:
-        return "Low", "Attendance and internal marks are satisfactory"
+        return "Low"
 
+df["Risk Level"] = df.apply(calculate_risk, axis=1)
 
-# Email alert
-def send_alert(name, roll, reason):
-    try:
-        email_settings = st.secrets["email"]
+# Dashboard
+st.subheader("📌 Dashboard")
 
-        msg = EmailMessage()
-        msg["Subject"] = "High Risk Student Alert"
-        msg["From"] = email_settings["sender"]
-        msg["To"] = email_settings["recipient"]
+col1, col2, col3 = st.columns(3)
 
-        msg.set_content(
-            f"Dear Teacher,\n\n"
-            f"Student Name: {name}\n"
-            f"Roll Number: {roll}\n"
-            f"Risk Level: High\n"
-            f"Reason: {reason}\n\n"
-            f"Please arrange a meeting and prepare an improvement plan."
-        )
+col1.metric("Total Students", len(df))
+col2.metric("High Risk", len(df[df["Risk Level"] == "High"]))
+col3.metric("Medium Risk", len(df[df["Risk Level"] == "Medium"]))
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(
-                email_settings["sender"],
-                email_settings["password"]
-            )
-            server.send_message(msg)
+# Student records
+st.subheader("👩‍🎓 Student Records")
+st.dataframe(df, use_container_width=True)
 
-        return True
+# Chart
+st.subheader("📈 Student Risk Analysis")
 
-    except Exception as e:
-        st.error(f"Email could not be sent: {e}")
-        return False
+risk_count = df["Risk Level"].value_counts().reset_index()
+risk_count.columns = ["Risk Level", "Students"]
 
+fig = px.pie(
+    risk_count,
+    names="Risk Level",
+    values="Students",
+    title="Students by Risk Level"
+)
 
-# Session storage
-if "students" not in st.session_state:
-    st.session_state.students = pd.DataFrame(columns=[
-        "Roll Number",
-        "Student Name",
-        "Attendance",
-        "Internal Marks",
-        "Previous semester",
-        "Risk Level",
-        "Reason"
-    ])
-
-df = st.session_state.students.copy()
+st.plotly_chart(fig, use_container_width=True)
 
 # Add student
-st.header("➕ Add Student")
+st.subheader("➕ Add New Student")
 
 with st.form("student_form"):
-    roll = st.text_input("Roll Number")
     name = st.text_input("Student Name")
-    attendance = st.number_input("Attendance (%)", 0.0, 100.0, 80.0)
-    marks = st.number_input("Internal Marks", 0.0, 100.0, 60.0)
-    previous = st.number_input("Previous semester (%)", 0.0, 100.0, 60.0)
+    attendance = st.number_input(
+        "Attendance (%)", min_value=0, max_value=100
+    )
+    marks = st.number_input(
+        "Internal Marks", min_value=0, max_value=100
+    )
 
     submitted = st.form_submit_button("Add Student")
 
     if submitted:
-        if not roll.strip() or not name.strip():
-            st.warning("Please enter both roll number and student name.")
-
-        elif roll.strip() in st.session_state.students["Roll Number"].astype(str).values:
-            st.warning("This roll number already exists.")
-
-        else:
-            risk, reason = predict_risk(attendance, marks)
-
+        if name.strip():
             new_student = pd.DataFrame([{
-                "Roll Number": roll.strip(),
-                "Student Name": name.strip(),
+                "Student Name": name,
                 "Attendance": attendance,
-                "Internal Marks": marks,
-                "Previous semester": previous,
-                "Risk Level": risk,
-                "Reason": reason
+                "Internal Marks": marks
             }])
 
-            st.session_state.students = pd.concat(
-                [st.session_state.students, new_student],
+            updated_df = pd.concat(
+                [df[["Student Name", "Attendance", "Internal Marks"]],
+                 new_student],
                 ignore_index=True
             )
 
-            if risk == "High":
-                if "email" in st.secrets:
-                    if send_alert(name, roll, reason):
-                        st.success("Student added. High-risk email alert sent!")
-                else:
-                    st.warning("Student added, but email settings are missing.")
-            else:
-                st.success(f"Student added successfully. Risk Level: {risk}")
-
+            updated_df.to_csv("students.csv", index=False)
+            st.success("Student added successfully!")
             st.rerun()
+        else:
+            st.error("Please enter the student name.")
 
+# Alerts
+st.subheader("🚨 Performance Alerts")
 
-# Dashboard
-st.header("📊 Performance Dashboard")
+high_risk = df[df["Risk Level"] == "High"]
 
-df = st.session_state.students.copy()
-
-if not df.empty:
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric("Total Students", len(df))
-    col2.metric("High Risk", int((df["Risk Level"] == "High").sum()))
-    col3.metric("Medium Risk", int((df["Risk Level"] == "Medium").sum()))
-    col4.metric("Low Risk", int((df["Risk Level"] == "Low").sum()))
-
-    st.subheader("Risk Distribution")
-
-    counts = df["Risk Level"].value_counts().reindex(
-        ["High", "Medium", "Low"], fill_value=0
-    )
-
-    chart_data = pd.DataFrame({
-        "Risk Level": counts.index,
-        "Students": counts.values
-    })
-
-    fig = px.pie(
-        chart_data,
-        names="Risk Level",
-        values="Students",
-        title="Student Risk Levels"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("Student Records")
-    st.dataframe(df, use_container_width=True)
-
-    st.subheader("⚠️ Students Needing Attention")
-
-    high_risk = df[df["Risk Level"] == "High"]
-
-    if not high_risk.empty:
-        st.dataframe(high_risk, use_container_width=True)
-    else:
-        st.success("No high-risk students currently.")
-
-    st.download_button(
-        "Download Student Report",
-        df.to_csv(index=False).encode("utf-8"),
-        "student_performance_report.csv",
-        "text/csv"
-    )
-
+if len(high_risk) > 0:
+    for _, student in high_risk.iterrows():
+        st.error(
+            f'{student["Student Name"]} needs immediate attention!'
+        )
 else:
-    st.info("No students added yet. Use the form above to add student records.")
+    st.success("No high-risk students found.")
