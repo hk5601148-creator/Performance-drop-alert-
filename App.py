@@ -38,7 +38,8 @@ df = load_data()
 def predict_risk(row):
     attendance = float(row["Attendance"])
     marks = float(row["Internal Marks"])
-
+    previous = float(row["Previous semester"])
+    
     if attendance < 60 and marks < 40:
         return pd.Series([
             "High",
