@@ -13,7 +13,31 @@ st.set_page_config(
 )
 
 
+st.markdown("""
+<style>
+.stApp {
+    background-color: #f4f8ff;
+}
+h1, h2, h3 {
+    color: #173b70;
+}
+div[data-testid="stMetric"] {
+    background-color: white;
+    border: 1px solid #d8e5f5;
+    padding: 18px;
+    border-radius: 12px;
+}
+.stButton > button {
+    background-color: #1f5fae;
+    color: white;
+    border-radius: 8px;
+    border: none;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("📊 Student Performance Drop Alert")
+st.caption("Smart Student Monitoring & Early Warning System")
 st.write("Monitor student performance and identify students who need support.")
 
 # Temporary app storage
