@@ -53,3 +53,10 @@ risk_count = df["Risk Level"].value_counts().reset_index()
 risk_count.columns = ["Risk Level", "Students"]
 
 fig = px.pie(
+    risk_count,
+    names="Risk Level",
+    values="Students",
+    title="Students by Risk Level"
+)
+
+st.plotly_chart(fig, use_container_width=True)
