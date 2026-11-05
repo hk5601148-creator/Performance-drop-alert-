@@ -37,6 +37,13 @@ div[data-testid="stMetric"] {
 """, unsafe_allow_html=True)
 
 st.title("📊 Student Performance Drop Alert")
+st.sidebar.title("📊 Performance Alert")
+st.sidebar.markdown("---")
+
+page = st.sidebar.radio(
+    "Navigation",
+    ["Dashboard", "Add Student", "Student Records", "About Project"]
+)
 st.caption("Smart Student Monitoring & Early Warning System")
 st.write("Monitor student performance and identify students who need support.")
 
