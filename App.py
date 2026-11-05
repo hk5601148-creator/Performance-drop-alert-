@@ -190,4 +190,58 @@ with st.form("student_form"):
             st.success("Student added successfully!")
             st.rerun()
 
+# Automatic email alert for high-risk students
+import smtplib
+from email.message import EmailMessage
+
+def send_alert(student):
+    try:
+        sender = st.secrets["email"]["sender"]
+        password = st.secrets["email"]["password"]
+        recipient = st.secrets["email"]["recipient"]
+
+        message = EmailMessage()
+        message["Subject"] = "High Risk Student Alert"
+        message["From"] = sender
+        message["To"] = recipient
+
+        message.set_content(
+            f"""
+            High Risk Student Alert
+
+            Roll Number: {student['Roll Number']}
+            Student Name: {student['Student Name']}
+            Attendance: {student['Attendance']}%
+            Internal Marks: {student['Internal Marks']}
+
+            Risk Reason: {student['Risk Reason']}
+            """
+        )
+
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(sender, password)
+            server.send_message(message)
+
+        return True
+
+    except Exception as error:
+        st.error(f"Email could not be sent: {error}")
+        return False
+
+
+st.header("📧 High Risk Email Alerts")
+
+if st.button("Send High Risk Email Alerts"):
+    high_risk_students = df[df["Risk Level"] == "High"]
+
+    if high_risk_students.empty:
+        st.info("There are no high-risk students.")
+    else:
+        for _, student in high_risk_students.iterrows():
+            if send_alert(student):
+                st.success(
+                    f"Alert email sent for {student['Student Name']}."
+    )
+    
     
