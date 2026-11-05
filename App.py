@@ -41,7 +41,25 @@ def predict_risk(row):
     previous = float(row["Previous semester"])
     
     if attendance < 60 and marks < 40:
-        return pd.Series([
+    def predict_risk(row):
+    attendance = float(row["Attendance"])
+    marks = float(row["Internal Marks"])
+    previous = float(row["Previous semester"])
+
+    if attendance < 60 and marks < 40:
+        risk = "High"
+        reason = "Low attendance and low internal marks"
+    elif previous < 40:
+        risk = "High"
+        reason = "Low previous semester percentage"
+    elif attendance < 75 or marks < 50 or previous < 50:
+        risk = "Medium"
+        reason = "Needs improvement in academic performance"
+    else:
+        risk = "Low"
+        reason = "Good academic performance"
+
+    return pd.Series([
             "High",
             "Attendance below 60% and marks below 40."
         ])
@@ -59,12 +77,7 @@ def predict_risk(row):
             "Medium",
             " and ".join(reasons) + "."
         ])
-
-    else:
-        return pd.Series([
-            "Low",
-            "Attendance and internal marks are satisfactory."
-        ])
+    
 
 
 df[["Risk Level", "Risk Reason"]] = df.apply(
