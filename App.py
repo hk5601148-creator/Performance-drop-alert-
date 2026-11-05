@@ -8,8 +8,10 @@ from google import genai
 st.set_page_config(
     page_title="Performance Drop Alert",
     page_icon="📊",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
 
 st.title("📊 Student Performance Drop Alert")
 st.write("Monitor student performance and identify students who need support.")
