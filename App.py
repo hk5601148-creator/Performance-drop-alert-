@@ -40,7 +40,7 @@ def predict_risk(row):
     marks = float(row["Internal Marks"])
     previous = float(row["Previous semester"])
     
-    if attendance < 60 and marks < 40:
+if attendance < 60 and marks < 40:
     def predict_risk(row):
     attendance = float(row["Attendance"])
     marks = float(row["Internal Marks"])
@@ -58,6 +58,7 @@ def predict_risk(row):
     else:
         risk = "Low"
         reason = "Good academic performance"
+        
 
 df[["Risk Level", "Risk Reason"]] = df.apply(
     predict_risk,
