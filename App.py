@@ -127,7 +127,8 @@ def send_alert(name, reason):
         return False
 
 
-# Student entry
+if page == "Add Student":
+    st.header("Add Student Details")
 st.header("Add Student Details")
 
 with st.form("student_form"):
