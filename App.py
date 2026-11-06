@@ -7,7 +7,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from google import genai
-from supabase import create_client
 
 # ==================================================
 # 1. PAGE CONFIGURATION
@@ -103,75 +102,46 @@ def get_risk_and_reason(attendance, internal):
             "Attendance and internal marks meet the stated risk criteria."
         )
 
-# Connect to Supabase using Streamlit Secrets.
-try:
-    supabase = create_client(
-        st.secrets["SUPABASE_URL"],
-        st.secrets["SUPABASE_KEY"]
-    )
-except Exception as error:
-    st.error(
-        "Database connection could not be started. Check SUPABASE_URL "
-        "and SUPABASE_KEY in Streamlit Secrets."
-    )
-    st.stop()
+if "students" not in st.session_state:
+    demo_data = [
+        [101, "Aman", "", 55, 35, 65],
+        [102, "Simran", "", 68, 45, 72],
+        [103, "Rohan", "", 85, 75, 80],
+        [104, "Priya", "", 48, 30, 60],
+        [105, "Rahul", "", 72, 55, 68],
+        [106, "Neha", "", 92, 88, 85],
+        [107, "Karan", "", 58, 50, 70],
+        [108, "Anjali", "", 45, 35, 55],
+        [109, "Arjun", "", 78, 42, 75],
+        [110, "Meena", "", 88, 65, 82],
+    ]
 
+    initial_rows = []
+    for roll, name, email, attendance, internal, previous in demo_data:
+        risk, reason = get_risk_and_reason(attendance, internal)
+        initial_rows.append({
+            "Roll": roll,
+            "Name": name,
+            "Student Email": email,
+            "Attendance %": attendance,
+            "Internal Marks": internal,
+            "Previous Semester %": previous,
+            "Risk Level": risk,
+            "Reason": reason,
+            "Gemini AI Analysis": (
+                "Demo record. Use the Student Records page to view this "
+                "record, or add a new student to generate a Gemini report."
+            )
+        })
 
-def load_students():
-    """Load all saved student records from the permanent Supabase table."""
-    response = supabase.table("students").select("*").order("roll").execute()
-    records = response.data or []
+    st.session_state.students = pd.DataFrame(initial_rows, columns=COLUMNS)
 
-    if not records:
-        return pd.DataFrame(columns=COLUMNS)
+# Keep the app compatible with an existing session created by an older version.
+for column in COLUMNS:
+    if column not in st.session_state.students.columns:
+        st.session_state.students[column] = ""
 
-    df = pd.DataFrame(records).rename(columns={
-        "roll": "Roll",
-        "name": "Name",
-        "student_email": "Student Email",
-        "attendance": "Attendance %",
-        "internal_marks": "Internal Marks",
-        "previous_semester": "Previous Semester %",
-        "risk_level": "Risk Level",
-        "reason": "Reason",
-        "gemini_ai_analysis": "Gemini AI Analysis"
-    })
-
-    for column in COLUMNS:
-        if column not in df.columns:
-            df[column] = ""
-
-    return df[COLUMNS]
-
-
-def save_student(student):
-    """Save one student record permanently in Supabase."""
-    record = {
-        "roll": int(student["Roll"]),
-        "name": str(student["Name"]),
-        "student_email": str(student["Student Email"]),
-        "attendance": float(student["Attendance %"]),
-        "internal_marks": float(student["Internal Marks"]),
-        "previous_semester": float(student["Previous Semester %"]),
-        "risk_level": str(student["Risk Level"]),
-        "reason": str(student["Reason"]),
-        "gemini_ai_analysis": str(student["Gemini AI Analysis"])
-    }
-
-    supabase.table("students").insert(record).execute()
-
-
-# Always load the latest saved records from the database.
-try:
-    st.session_state.students = load_students()
-except Exception as error:
-    st.error(
-        "Could not load student records from Supabase. Check that the "
-        "students table has the required columns and that your API key "
-        "has database access."
-    )
-    st.code(str(error))
-    st.stop()
+st.session_state.students = st.session_state.students[COLUMNS]
 
 # Track successful automatic/manual email sends for this app session.
 if "sent_alerts" not in st.session_state:
@@ -442,18 +412,12 @@ elif page == "Add Student":
                 "Gemini AI Analysis": ai_analysis
             }])
 
-            try:
-                save_student(new_student.iloc[0].to_dict())
-                st.session_state.students = load_students()
-            except Exception as error:
-                st.error(
-                    "The student could not be saved to the database. "
-                    "Please check your Supabase table and API permissions."
-                )
-                st.code(str(error))
-                st.stop()
+            st.session_state.students = pd.concat(
+                [st.session_state.students, new_student],
+                ignore_index=True
+            )
 
-            st.success("Student saved permanently!")
+            st.success("Student added successfully!")
             st.subheader("Risk Analysis Result")
             st.write("**Risk Level:**", risk)
             st.write("**Reason:**", reason)
