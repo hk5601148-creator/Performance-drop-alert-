@@ -630,3 +630,13 @@ elif page == "About Project":
     - Plotly
     - Google Gemini API
     - Gmail SMTP
+    - CSV file storage
+    """)
+
+# ==================================================
+# 11. SIDEBAR FOOTER
+# ==================================================
+
+st.sidebar.markdown("---")
+st.sidebar.caption("BCA Internship Project")
+st.sidebar.caption("Performance Drop Alert")
