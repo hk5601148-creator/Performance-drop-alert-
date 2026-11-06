@@ -184,27 +184,47 @@ Important:
 - Base your analysis only on the supplied information.
 """
 
-        # Retry temporary service-capacity errors a limited number of times.
-        for attempt in range(2):
-            try:
-                response = client.models.generate_content(
-                    model="gemini-3.8-flash",
-                    contents=prompt
-                )
-                if response.text:
-                    return risk, response.text
-                return risk, "Gemini returned an empty response."
-            except Exception as error:
-                error_text = str(error).lower()
-                temporary_error = (
-                    "503" in error_text
-                    or "unavailable" in error_text
-                    or "overloaded" in error_text
-                )
-                if temporary_error and attempt == 0:
-                    time.sleep(2)
-                    continue
-                raise
+        # Try the main Gemini model first, then a lighter fallback model
+        # if Google reports temporary overload / service unavailability.
+        models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
+        last_error = None
+
+        for model_name in models_to_try:
+            for attempt in range(2):
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=prompt
+                    )
+                    if response.text:
+                        return risk, response.text
+                    last_error = RuntimeError(
+                        f"{model_name} returned an empty response."
+                    )
+                    break
+                except Exception as error:
+                    last_error = error
+                    error_text = str(error).lower()
+                    temporary_error = (
+                        "503" in error_text
+                        or "unavailable" in error_text
+                        or "overloaded" in error_text
+                    )
+                    if temporary_error and attempt == 0:
+                        time.sleep(2)
+                        continue
+                    # Try the fallback model for temporary capacity errors.
+                    if temporary_error:
+                        break
+                    # For authentication, permission, or other errors,
+                    # stop rather than masking the real configuration issue.
+                    raise
+
+        raise RuntimeError(
+            "Gemini models are temporarily unavailable. "
+            "Please try again later. Last error: "
+            f"{last_error}"
+        )
 
     except Exception as error:
         return risk, (
