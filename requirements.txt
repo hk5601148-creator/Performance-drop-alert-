@@ -3,6 +3,6 @@ streamlit
 pandas
 plotly
 google-genai
-supabase
+
 
 
