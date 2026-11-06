@@ -237,47 +237,49 @@ Important:
 # 6. EMAIL ALERT FUNCTION
 # ==================================================
 
+
 def send_alert(name, receiver, reason, risk):
-    """Send one alert using Gmail SMTP and an App Password in Secrets."""
-    if not receiver or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", receiver):
-        return False, "A valid student email address is required."
+    """Send an alert using Gmail SMTP and Streamlit Secrets."""
 
     try:
         sender = st.secrets["email"]["sender_email"]
         password = st.secrets["email"]["app_password"]
+        recipient = st.secrets["email"]["recipient_email"]
+
+        if not recipient or not re.match(
+            r"^[^@\s]+@[^@\s]+\.[^@\s]+$", recipient
+        ):
+            return False, "Please add a valid recipient_email in Secrets."
 
         message = EmailMessage()
         message["Subject"] = "Student Performance Alert - High Risk"
         message["From"] = sender
-        message["To"] = receiver
+        message["To"] = recipient
 
         message.set_content(
-            f"Dear {name},\n\n"
-            f"Your academic performance has been classified as {risk}.\n\n"
+            f"Dear Mentor,\n\n"
+            f"Student Name: {name}\n"
+            f"Risk Level: {risk}\n"
             f"Reason: {reason}\n\n"
-            "Recommended actions:\n"
-            "1. Meet your academic mentor.\n"
-            "2. Work on improving attendance.\n"
-            "3. Prepare regularly for internal assessments.\n"
-            "4. Follow a study plan with your mentor.\n\n"
-            "Please contact your teacher or mentor for support.\n\n"
-            "Regards,\n"
-            "Performance Drop Alert System"
+            "Please review this student's academic performance "
+            "and provide appropriate support.\n\n"
+            "Regards,\nPerformance Drop Alert System"
         )
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as smtp:
+        with smtplib.SMTP_SSL(
+            "smtp.gmail.com", 465, timeout=20
+        ) as smtp:
             smtp.login(sender, password)
             smtp.send_message(message)
 
-        return True, "Email alert sent successfully."
+        return True, "Email alert sent successfully to the mentor."
 
-    except KeyError:
-        return False, (
-            "Email settings are not configured in Streamlit Secrets. "
-            "Add sender_email and app_password under the email section."
-        )
+    except KeyError as error:
+        return False, f"Missing email setting in Secrets: {error}"
+
     except Exception as error:
         return False, f"Email sending failed: {error}"
+        
 
 # ==================================================
 # 7. DASHBOARD
