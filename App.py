@@ -1,15 +1,12 @@
-
 import re
 import time
 import smtplib
-from pathlib import Path
 from email.message import EmailMessage
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 from google import genai
-
 
 # ==================================================
 # 1. PAGE CONFIGURATION
@@ -21,7 +18,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 
 # ==================================================
 # 2. PROFESSIONAL DESIGN
@@ -57,7 +53,6 @@ div[data-testid="stMetric"] {
 </style>
 """, unsafe_allow_html=True)
 
-
 # ==================================================
 # 3. HEADER AND NAVIGATION
 # ==================================================
@@ -73,9 +68,8 @@ page = st.sidebar.radio(
     ["Dashboard", "Add Student", "Student Records", "About Project"]
 )
 
-
 # ==================================================
-# 4. PERMANENT CSV STUDENT DATABASE
+# 4. STUDENT DATABASE
 # ==================================================
 
 COLUMNS = [
@@ -90,80 +84,25 @@ COLUMNS = [
     "Gemini AI Analysis"
 ]
 
-# CSV file will be created in the same folder as app.py.
-CSV_FILE = Path(__file__).parent / "students.csv"
-
-
 def get_risk_and_reason(attendance, internal):
-    """Apply the exact project risk classification rules."""
-
+    """Apply the exact risk rules from the project instructions."""
     if attendance < 60 and internal < 40:
         return (
             "High Risk",
             "Attendance is below 60% and internal marks are below 40%."
         )
-
     elif attendance < 75 or internal < 50:
         return (
             "Medium Risk",
             "Attendance is below 75% or internal marks are below 50%."
         )
-
     else:
         return (
             "Low Risk",
             "Attendance and internal marks meet the stated risk criteria."
         )
 
-
-def save_students(df):
-    """Save student records permanently in CSV format."""
-
-    df = df[COLUMNS].copy()
-
-    temp_file = CSV_FILE.with_suffix(".tmp")
-
-    df.to_csv(temp_file, index=False, encoding="utf-8-sig")
-
-    # Replace the old file only after successful saving.
-    temp_file.replace(CSV_FILE)
-
-
-def load_students():
-    """Load existing CSV records or create initial demo records."""
-
-    if CSV_FILE.exists():
-
-        try:
-            df = pd.read_csv(CSV_FILE)
-
-            # Support older CSV files with missing columns.
-            for column in COLUMNS:
-                if column not in df.columns:
-                    df[column] = ""
-
-            df = df[COLUMNS]
-
-            # Validate roll numbers.
-            df["Roll"] = pd.to_numeric(
-                df["Roll"], errors="coerce"
-            )
-
-            df = df.dropna(subset=["Roll"])
-            df["Roll"] = df["Roll"].astype(int)
-
-            return df.reset_index(drop=True)
-
-        except Exception as error:
-            st.error(
-                f"Unable to read students.csv: {error}. "
-                "Your existing file has not been overwritten."
-            )
-            st.stop()
-
-    # Initial demo records.
-    # These are created only when students.csv does not exist.
-
+if "students" not in st.session_state:
     demo_data = [
         [101, "Aman", "", 55, 35, 65],
         [102, "Simran", "", 68, 45, 72],
@@ -178,14 +117,8 @@ def load_students():
     ]
 
     initial_rows = []
-
     for roll, name, email, attendance, internal, previous in demo_data:
-
-        risk, reason = get_risk_and_reason(
-            attendance,
-            internal
-        )
-
+        risk, reason = get_risk_and_reason(attendance, internal)
         initial_rows.append({
             "Roll": roll,
             "Name": name,
@@ -196,54 +129,33 @@ def load_students():
             "Risk Level": risk,
             "Reason": reason,
             "Gemini AI Analysis": (
-                "Demo record. Use the Student Records page "
-                "to view this record, or add a new student "
-                "to generate a Gemini report."
+                "Demo record. Use the Student Records page to view this "
+                "record, or add a new student to generate a Gemini report."
             )
         })
 
-    df = pd.DataFrame(initial_rows, columns=COLUMNS)
+    st.session_state.students = pd.DataFrame(initial_rows, columns=COLUMNS)
 
-    save_students(df)
-
-    return df
-
-
-# Load records once per Streamlit session.
-
-if "students" not in st.session_state:
-    st.session_state.students = load_students()
-
-# Ensure all required columns exist.
-
+# Keep the app compatible with an existing session created by an older version.
 for column in COLUMNS:
     if column not in st.session_state.students.columns:
         st.session_state.students[column] = ""
 
-st.session_state.students = (
-    st.session_state.students[COLUMNS]
-)
+st.session_state.students = st.session_state.students[COLUMNS]
 
-# Track successful email alerts during the current session.
-
+# Track successful automatic/manual email sends for this app session.
 if "sent_alerts" not in st.session_state:
     st.session_state.sent_alerts = set()
-
 
 # ==================================================
 # 5. GEMINI AI ANALYSIS
 # ==================================================
 
 def analyse_student(attendance, internal, previous):
-
-    risk, reason = get_risk_and_reason(
-        attendance,
-        internal
-    )
+    risk, reason = get_risk_and_reason(attendance, internal)
 
     try:
         api_key = st.secrets["gemini"]["api_key"]
-
         client = genai.Client(api_key=api_key)
 
         prompt = f"""
@@ -254,7 +166,6 @@ Analyse the following student data:
 Attendance: {attendance}%
 Internal Marks: {internal}%
 Previous Semester Percentage: {previous}%
-
 Rule-based Risk Level: {risk}
 Rule-based Reason: {reason}
 
@@ -264,9 +175,7 @@ Prepare a report in simple English with these headings:
 2. Gemini AI Assessment
 3. Reasons for Concern
 4. Personalised Improvement Plan
-
 Give four practical suggestions.
-
 5. Mentor Recommendation
 
 Important:
@@ -275,71 +184,50 @@ Important:
 - Base your analysis only on the supplied information.
 """
 
-        # Retry temporary service-capacity errors once.
-
+        # Retry temporary service-capacity errors a limited number of times.
         for attempt in range(2):
-
             try:
                 response = client.models.generate_content(
                     model="gemini-3.8-flash",
                     contents=prompt
                 )
-
                 if response.text:
                     return risk, response.text
-
                 return risk, "Gemini returned an empty response."
-
             except Exception as error:
-
                 error_text = str(error).lower()
-
                 temporary_error = (
                     "503" in error_text
                     or "unavailable" in error_text
                     or "overloaded" in error_text
                 )
-
                 if temporary_error and attempt == 0:
                     time.sleep(2)
                     continue
-
                 raise
 
     except Exception as error:
-
         return risk, (
             "Gemini AI analysis is temporarily unavailable. "
             "The rule-based risk result is still available. "
             f"Technical detail: {error}"
         )
 
-
 # ==================================================
 # 6. EMAIL ALERT FUNCTION
 # ==================================================
 
 def send_alert(name, receiver, reason, risk):
-
-    """Send an email using Gmail SMTP and Streamlit Secrets."""
-
-    if not receiver or not re.match(
-        r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
-        receiver
-    ):
+    """Send one alert using Gmail SMTP and an App Password in Secrets."""
+    if not receiver or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", receiver):
         return False, "A valid student email address is required."
 
     try:
-
         sender = st.secrets["email"]["sender_email"]
         password = st.secrets["email"]["app_password"]
 
         message = EmailMessage()
-
-        message["Subject"] = (
-            "Student Performance Alert - High Risk"
-        )
-
+        message["Subject"] = "Student Performance Alert - High Risk"
         message["From"] = sender
         message["To"] = receiver
 
@@ -357,28 +245,19 @@ def send_alert(name, receiver, reason, risk):
             "Performance Drop Alert System"
         )
 
-        with smtplib.SMTP_SSL(
-            "smtp.gmail.com",
-            465,
-            timeout=20
-        ) as smtp:
-
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as smtp:
             smtp.login(sender, password)
             smtp.send_message(message)
 
         return True, "Email alert sent successfully."
 
     except KeyError:
-
         return False, (
             "Email settings are not configured in Streamlit Secrets. "
             "Add sender_email and app_password under the email section."
         )
-
     except Exception as error:
-
         return False, f"Email sending failed: {error}"
-
 
 # ==================================================
 # 7. DASHBOARD
@@ -391,41 +270,28 @@ if page == "Dashboard":
     df = st.session_state.students.copy()
 
     total = len(df)
-
     high = len(df[df["Risk Level"] == "High Risk"])
     medium = len(df[df["Risk Level"] == "Medium Risk"])
     low = len(df[df["Risk Level"] == "Low Risk"])
 
     c1, c2, c3, c4 = st.columns(4)
-
     c1.metric("Total Students", total)
     c2.metric("🔴 High Risk", high)
     c3.metric("🟠 Medium Risk", medium)
     c4.metric("🟢 Low Risk", low)
 
     st.divider()
-
     st.subheader("Student Risk Analysis")
 
     chart_data = pd.DataFrame({
-        "Risk Level": [
-            "High Risk",
-            "Medium Risk",
-            "Low Risk"
-        ],
-        "Students": [
-            high,
-            medium,
-            low
-        ]
+        "Risk Level": ["High Risk", "Medium Risk", "Low Risk"],
+        "Students": [high, medium, low]
     })
 
     left, right = st.columns(2)
 
     with left:
-
         st.markdown("**Bar Chart – Risk Distribution**")
-
         bar_fig = px.bar(
             chart_data,
             x="Risk Level",
@@ -438,22 +304,15 @@ if page == "Dashboard":
                 "Low Risk": "#27ae60"
             }
         )
-
         bar_fig.update_layout(
             plot_bgcolor="white",
             paper_bgcolor="white",
             showlegend=False
         )
-
-        st.plotly_chart(
-            bar_fig,
-            use_container_width=True
-        )
+        st.plotly_chart(bar_fig, use_container_width=True)
 
     with right:
-
         st.markdown("**Pie Chart – Risk Percentage**")
-
         pie_fig = px.pie(
             chart_data,
             names="Risk Level",
@@ -466,34 +325,16 @@ if page == "Dashboard":
                 "Low Risk": "#27ae60"
             }
         )
-
-        st.plotly_chart(
-            pie_fig,
-            use_container_width=True
-        )
+        st.plotly_chart(pie_fig, use_container_width=True)
 
     st.divider()
-
     st.subheader("Student Overview")
-
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True
-    )
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
     if high > 0:
-
-        st.warning(
-            f"{high} student(s) require immediate attention."
-        )
-
+        st.warning(f"{high} student(s) require immediate attention.")
     else:
-
-        st.success(
-            "No High Risk students at present."
-        )
-
+        st.success("No High Risk students at present.")
 
 # ==================================================
 # 8. ADD STUDENT
@@ -502,32 +343,18 @@ if page == "Dashboard":
 elif page == "Add Student":
 
     st.header("➕ Add New Student")
-
-    st.write(
-        "Enter academic details to analyse student performance."
-    )
+    st.write("Enter academic details to analyse student performance.")
 
     with st.form("student_form"):
-
         left, right = st.columns(2)
 
         with left:
-
-            roll = st.number_input(
-                "Roll Number",
-                min_value=1,
-                step=1
-            )
-
-            name = st.text_input(
-                "Student Name"
-            )
-
+            roll = st.number_input("Roll Number", min_value=1, step=1)
+            name = st.text_input("Student Name")
             student_email = st.text_input(
                 "Student Email (required for email alert)",
                 placeholder="student@example.com"
             )
-
             attendance = st.number_input(
                 "Attendance (%)",
                 min_value=0.0,
@@ -536,14 +363,12 @@ elif page == "Add Student":
             )
 
         with right:
-
             internal = st.number_input(
                 "Internal Marks",
                 min_value=0.0,
                 max_value=100.0,
                 value=50.0
             )
-
             previous = st.number_input(
                 "Previous Semester (%)",
                 min_value=0.0,
@@ -557,40 +382,23 @@ elif page == "Add Student":
         )
 
     if submitted:
-
         if not name.strip():
-
             st.warning("Please enter the student name.")
-
         elif roll in st.session_state.students["Roll"].values:
-
             st.warning("This roll number already exists.")
-
         elif student_email.strip() and not re.match(
-            r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
-            student_email.strip()
+            r"^[^@\s]+@[^@\s]+\.[^@\s]+$", student_email.strip()
         ):
-
-            st.warning(
-                "Please enter a valid email address, or leave it blank."
-            )
-
+            st.warning("Please enter a valid email address, or leave it blank.")
         else:
-
-            with st.spinner(
-                "Analysing student performance..."
-            ):
-
+            with st.spinner("Analysing student performance..."):
                 risk, ai_analysis = analyse_student(
                     attendance,
                     internal,
                     previous
                 )
 
-            _, reason = get_risk_and_reason(
-                attendance,
-                internal
-            )
+            _, reason = get_risk_and_reason(attendance, internal)
 
             new_student = pd.DataFrame([{
                 "Roll": int(roll),
@@ -604,81 +412,45 @@ elif page == "Add Student":
                 "Gemini AI Analysis": ai_analysis
             }])
 
-            # Add record to session and permanent CSV file.
-
             st.session_state.students = pd.concat(
-                [
-                    st.session_state.students,
-                    new_student
-                ],
+                [st.session_state.students, new_student],
                 ignore_index=True
             )
 
-            save_students(
-                st.session_state.students
-            )
-
-            st.success(
-                "Student added and saved successfully!"
-            )
-
+            st.success("Student added successfully!")
             st.subheader("Risk Analysis Result")
-
             st.write("**Risk Level:**", risk)
             st.write("**Reason:**", reason)
 
             st.subheader("🤖 Gemini AI Assessment")
-
             st.markdown(ai_analysis)
 
-            # Automatic High Risk email alert.
-
+            # Automatically email newly added High Risk students if an
+            # address and Gmail Secrets are configured.
             if risk == "High Risk":
-
                 st.warning(
                     "This student requires immediate mentor attention."
                 )
-
                 if student_email.strip():
-
-                    alert_key = (
-                        f"{int(roll)}:"
-                        f"{student_email.strip().lower()}"
-                    )
-
+                    alert_key = f"{int(roll)}:{student_email.strip().lower()}"
                     if alert_key not in st.session_state.sent_alerts:
-
-                        with st.spinner(
-                            "Sending High Risk email alert..."
-                        ):
-
+                        with st.spinner("Sending High Risk email alert..."):
                             sent, message = send_alert(
                                 name.strip(),
                                 student_email.strip(),
                                 reason,
                                 risk
                             )
-
                         if sent:
-
-                            st.session_state.sent_alerts.add(
-                                alert_key
-                            )
-
+                            st.session_state.sent_alerts.add(alert_key)
                             st.success(message)
-
                         else:
-
                             st.warning(message)
-
                 else:
-
                     st.info(
-                        "No student email was entered. "
-                        "Add an email address in the student record "
-                        "before sending an alert."
+                        "No student email was entered. Add an email address "
+                        "in the student record before sending an alert."
                     )
-
 
 # ==================================================
 # 9. STUDENT RECORDS
@@ -687,120 +459,133 @@ elif page == "Add Student":
 elif page == "Student Records":
 
     st.header("📋 Student Records")
-
     df = st.session_state.students.copy()
 
-    search = st.text_input(
-        "Search by student name or roll number"
-    )
-
+    search = st.text_input("Search by student name or roll number")
     risk_filter = st.selectbox(
         "Filter by Risk Level",
-        [
-            "All",
-            "High Risk",
-            "Medium Risk",
-            "Low Risk"
-        ]
+        ["All", "High Risk", "Medium Risk", "Low Risk"]
     )
 
     if search:
-
         df = df[
-            df["Name"].astype(str).str.contains(
-                search,
-                case=False,
-                na=False
-            )
-            |
-            df["Roll"].astype(str).str.contains(
-                search,
-                na=False
-            )
+            df["Name"].str.contains(search, case=False, na=False)
+            | df["Roll"].astype(str).str.contains(search, na=False)
         ]
 
     if risk_filter != "All":
+        df = df[df["Risk Level"] == risk_filter]
 
-        df = df[
-            df["Risk Level"] == risk_filter
-        ]
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    # --------------------------------------------------
-    # EDIT AND DELETE STUDENT RECORDS
-    # --------------------------------------------------
-
-    st.divider()
-
-    st.subheader("✏️ Manage Student Records")
-
-    records = st.session_state.students.copy()
+    st.subheader("🤖 View Gemini AI Report")
+    records = st.session_state.students
 
     if not records.empty:
-
         selected_roll = st.selectbox(
             "Select Student Roll Number",
             records["Roll"].tolist(),
-            key="manage_roll"
+            key="report_roll"
         )
+        selected = records[records["Roll"] == selected_roll].iloc[0]
+        st.write("**Student:**", selected["Name"])
+        st.write("**Risk Level:**", selected["Risk Level"])
+        st.markdown(selected["Gemini AI Analysis"])
 
-        selected_index = records.index[
-            records["Roll"] == selected_roll
-        ][0]
+    # Manual resend option retained for records that need an alert.
+    st.divider()
+    st.subheader("📧 High Risk Email Alert")
 
-        selected_student = records.loc[
-            selected_index
-        ]
+    high_students = records[records["Risk Level"] == "High Risk"]
 
-        st.write(
-            "**Selected Student:**",
-            selected_student["Name"]
+    if not high_students.empty:
+        selected_email_roll = st.selectbox(
+            "Select High Risk Student",
+            high_students["Roll"].tolist(),
+            key="email_roll"
         )
+        email_student = high_students[
+            high_students["Roll"] == selected_email_roll
+        ].iloc[0]
 
-        # EDIT STUDENT
+        st.write("**Student:**", email_student["Name"])
+        st.write("**Email:**", email_student["Student Email"] or "Not entered")
 
-        with st.expander("✏️ Edit Student Details"):
+        if st.button("Send / Resend Email Alert"):
+            alert_key = (
+                f"{int(email_student['Roll'])}:"
+                f"{str(email_student['Student Email']).strip().lower()}"
+            )
+            sent, message = send_alert(
+                email_student["Name"],
+                email_student["Student Email"],
+                email_student["Reason"],
+                email_student["Risk Level"]
+            )
+            if sent:
+                st.session_state.sent_alerts.add(alert_key)
+                st.success(message)
+            else:
+                st.error(message)
+    else:
+        st.info("No High Risk students found.")
 
-            with st.form("edit_student_form"):
+    csv = records.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "⬇️ Download Student Records",
+        data=csv,
+        file_name="student_records.csv",
+        mime="text/csv"
+    )
 
-                edit_name = st.text_input(
-                    "Student Name",
-                    value=str(selected_student["Name"])
-                )
+# ==================================================
+# 10. ABOUT PROJECT
+# ==================================================
 
-                edit_email = st.text_input(
-                    "Student Email",
-                    value=str(selected_student["Student Email"])
-                )
+elif page == "About Project":
 
-                edit_attendance = st.number_input(
-                    "Attendance (%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=float(selected_student["Attendance %"])
-                )
+    st.header("ℹ️ About Performance Drop Alert")
 
-                edit_internal = st.number_input(
-                    "Internal Marks",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=float(selected_student["Internal Marks"])
-                )
+    st.write("""
+    Performance Drop Alert is a student academic monitoring
+    system designed to identify students who may need
+    additional academic support.
 
-                edit_previous = st.number_input(
-                    "Previous Semester (%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=float(selected_student["Previous Semester %"])
-                )
+    ### Main Features
 
-                update_button = st.form_submit_button(
-                    "Update Student Record"
-                )
+    - Student information management
+    - Attendance and internal marks analysis
+    - Rule-based risk classification
+    - Gemini AI academic assessment
+    - Personalised improvement recommendations
+    - High Risk email notifications
+    - Dashboard with bar and pie charts
+    - Student search and filtering
+    - CSV report download
 
-        
+    ### Risk Classification Rules
+
+    **High Risk:** Attendance below 60% AND internal marks below 40%.
+
+    **Medium Risk:** Attendance below 75% OR internal marks below 50%,
+    unless the student is already High Risk.
+
+    **Low Risk:** All other cases.
+
+    ### Technologies Used
+
+    - Python
+    - Streamlit
+    - Pandas
+    - Plotly
+    - Google Gemini API
+    - Gmail SMTP
+    """)
+
+# ==================================================
+# 11. SIDEBAR FOOTER
+# ==================================================
+
+st.sidebar.markdown("---")
+st.sidebar.caption("BCA Internship Project")
+st.sidebar.caption("Performance Drop Alert")
