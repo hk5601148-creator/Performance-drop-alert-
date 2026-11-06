@@ -1,7 +1,6 @@
 import re
 import time
 import smtplib
-import os
 from email.message import EmailMessage
 
 import streamlit as st
@@ -70,7 +69,7 @@ page = st.sidebar.radio(
 )
 
 # ==================================================
-# 4. STUDENT DATABASE + CSV STORAGE
+# 4. STUDENT DATABASE
 # ==================================================
 
 COLUMNS = [
@@ -84,19 +83,6 @@ COLUMNS = [
     "Reason",
     "Gemini AI Analysis"
 ]
-
-CSV_FILE = "students.csv"
-
-
-def save_students():
-    """Save all current student records to the CSV file."""
-    try:
-        st.session_state.students.to_csv(CSV_FILE, index=False)
-        return True
-    except Exception as error:
-        st.error(f"Could not save student records: {error}")
-        return False
-
 
 def get_risk_and_reason(attendance, internal):
     """Apply the exact risk rules from the project instructions."""
@@ -116,52 +102,41 @@ def get_risk_and_reason(attendance, internal):
             "Attendance and internal marks meet the stated risk criteria."
         )
 
-
 if "students" not in st.session_state:
-    # First, try to load records saved during an earlier app session.
-    if os.path.exists(CSV_FILE):
-        try:
-            st.session_state.students = pd.read_csv(CSV_FILE)
-        except Exception as error:
-            st.error(f"Could not read students.csv: {error}")
-            st.session_state.students = pd.DataFrame(columns=COLUMNS)
-    else:
-        # Create demo records only when no CSV file exists yet.
-        demo_data = [
-            [101, "Aman", "", 55, 35, 65],
-            [102, "Simran", "", 68, 45, 72],
-            [103, "Rohan", "", 85, 75, 80],
-            [104, "Priya", "", 48, 30, 60],
-            [105, "Rahul", "", 72, 55, 68],
-            [106, "Neha", "", 92, 88, 85],
-            [107, "Karan", "", 58, 50, 70],
-            [108, "Anjali", "", 45, 35, 55],
-            [109, "Arjun", "", 78, 42, 75],
-            [110, "Meena", "", 88, 65, 82],
-        ]
+    demo_data = [
+        [101, "Aman", "", 55, 35, 65],
+        [102, "Simran", "", 68, 45, 72],
+        [103, "Rohan", "", 85, 75, 80],
+        [104, "Priya", "", 48, 30, 60],
+        [105, "Rahul", "", 72, 55, 68],
+        [106, "Neha", "", 92, 88, 85],
+        [107, "Karan", "", 58, 50, 70],
+        [108, "Anjali", "", 45, 35, 55],
+        [109, "Arjun", "", 78, 42, 75],
+        [110, "Meena", "", 88, 65, 82],
+    ]
 
-        initial_rows = []
-        for roll, name, email, attendance, internal, previous in demo_data:
-            risk, reason = get_risk_and_reason(attendance, internal)
-            initial_rows.append({
-                "Roll": roll,
-                "Name": name,
-                "Student Email": email,
-                "Attendance %": attendance,
-                "Internal Marks": internal,
-                "Previous Semester %": previous,
-                "Risk Level": risk,
-                "Reason": reason,
-                "Gemini AI Analysis": (
-                    "Demo record. Use the Student Records page to view this "
-                    "record, or add a new student to generate a Gemini report."
-                )
-            })
+    initial_rows = []
+    for roll, name, email, attendance, internal, previous in demo_data:
+        risk, reason = get_risk_and_reason(attendance, internal)
+        initial_rows.append({
+            "Roll": roll,
+            "Name": name,
+            "Student Email": email,
+            "Attendance %": attendance,
+            "Internal Marks": internal,
+            "Previous Semester %": previous,
+            "Risk Level": risk,
+            "Reason": reason,
+            "Gemini AI Analysis": (
+                "Demo record. Use the Student Records page to view this "
+                "record, or add a new student to generate a Gemini report."
+            )
+        })
 
-        st.session_state.students = pd.DataFrame(initial_rows, columns=COLUMNS)
-        save_students()
+    st.session_state.students = pd.DataFrame(initial_rows, columns=COLUMNS)
 
-# Keep the app compatible with a CSV or session created by an older version.
+# Keep the app compatible with an existing session created by an older version.
 for column in COLUMNS:
     if column not in st.session_state.students.columns:
         st.session_state.students[column] = ""
@@ -262,6 +237,7 @@ Important:
 # 6. EMAIL ALERT FUNCTION
 # ==================================================
 
+
 def send_alert(name, receiver, reason, risk):
     """Send an alert using Gmail SMTP and Streamlit Secrets."""
 
@@ -303,7 +279,7 @@ def send_alert(name, receiver, reason, risk):
 
     except Exception as error:
         return False, f"Email sending failed: {error}"
-
+        
 
 # ==================================================
 # 7. DASHBOARD
@@ -463,9 +439,6 @@ elif page == "Add Student":
                 ignore_index=True
             )
 
-            # SAVE NEW STUDENT RECORDS TO CSV AUTOMATICALLY.
-            save_students()
-
             st.success("Student added successfully!")
             st.subheader("Risk Analysis Result")
             st.write("**Risk Level:**", risk)
@@ -611,7 +584,6 @@ elif page == "About Project":
     - Dashboard with bar and pie charts
     - Student search and filtering
     - CSV report download
-    - Automatic CSV saving and loading
 
     ### Risk Classification Rules
 
@@ -630,7 +602,6 @@ elif page == "About Project":
     - Plotly
     - Google Gemini API
     - Gmail SMTP
-    - CSV file storage
     """)
 
 # ==================================================
